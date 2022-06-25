@@ -70,7 +70,7 @@ const stopBtn = document.getElementById("stop");
 stopBtn.addEventListener("click", stopSend);
 
 function send() {
-  let dit = duration / 1000;
+  let dit = 1;
   let dah = dit * 3;
   let space = dit;
   let extraperchar = dit * 2;
@@ -79,28 +79,33 @@ function send() {
   let msg = messageElt.value.toUpperCase();
   // console.log(`msg=${msg}`);
 
-  let time = context.currentTime;
+  let startTime = context.currentTime;
+  let pos = 0;
 
   for (var char of msg) {
     let code = mvs.indexOf(char);
     // console.log(`char=${char}, code=${code}`);
-    if (code === 1) time += extraperword; //space
+    if (code === 1) pos += extraperword; //space
     if (code < 2) continue; //space, or not found
     while (code > 1) {
       let dur = code & 1 ? dah : dit;
-      // console.log(`time=${time}, duration=${dur}`);
+      // console.log(`pos=${pos}, duration=${dur}`);
       let osc = context.createOscillator(); // instantiate an oscillator
       osc.frequency.value = frequency;
       osc.connect(out); // connect it to the destination
-      osc.start(time); // start it three seconds from now
-      time += dur;
-      osc.stop(time);
-      time += space;
+      osc.start(posToTime(pos)); // start it three seconds from now
+      pos += dur;
+      osc.stop(posToTime(pos));
+      pos += space;
       code >>= 1; //shift right one bid
     }
-    time += extraperchar;
+    pos += extraperchar;
   }
-  return time;
+  return posToTime(pos);
+
+  function posToTime(p) {
+    return startTime + p * duration/1000;
+  }
 }
 
 function stopSend() {
