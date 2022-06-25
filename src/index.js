@@ -6,6 +6,12 @@ import "./styles.css";
 // here: https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/resume
 // end-detection logic is from https://web.dev/audio-scheduling/
 
+// to get the built version to work in a subdirectory, I had to follow
+// https://github.com/parcel-bundler/parcel/issues/206
+// and to deal with a "plugin is not a function" error, I had to add 
+// --no-minify, following 
+//https://stackoverflow.com/questions/67069266/parcel-build-error-plugin-is-not-a-function
+
 //TODO:
 // make UI pretty
 // queue sounds on the fly so that controls work during playback
