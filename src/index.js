@@ -6,6 +6,12 @@ import "./styles.css";
 // here: https://developer.mozilla.org/en-US/docs/Web/API/AudioContext/resume
 // end-detection logic is from https://web.dev/audio-scheduling/
 
+//TODO:
+// make UI pretty
+// queue sounds on the fly so that controls work during playback
+// draw boundaries around the tape
+// draw trails using alpha
+
 let frequency, volume, duration;
 
 const mvs =
@@ -14,9 +20,28 @@ const mvs =
 
 let context = null,
   out = null;
-let sendUntil; //non-null only when sending
-let checker;
+let startTime;
+let stopTime; //non-null only when sending
+// let checker;
 let paused = false;
+
+const canvas = document.getElementById("ticker");
+const ctx = canvas.getContext("2d");
+
+const diam = 10; //diameter of dit, in pixels
+ctx.lineWidth = diam;
+ctx.lineCap = "round";
+const xstart = diam / 2;
+const ystart = 25;
+let codePath;
+let tapeLength;
+
+// ctx.beginPath();
+// ctx.moveTo( r*2 , 25);
+// ctx.lineTo(r*2, 25);
+// ctx.moveTo( r*10 , 25);
+// ctx.lineTo(r*20, 25);
+// ctx.stroke();
 
 const frequencyElt = document.getElementById("fIn");
 frequencyElt.addEventListener("input", frequencyListener);
@@ -33,7 +58,7 @@ durationListener();
 const messageElt = document.getElementById("msg");
 messageElt.addEventListener("input", (e) => {
   // deal with Send button
-  if (sendUntil) return; //should stay disabled while sending
+  if (stopTime) return; //should stay disabled while sending
   enableSend();
 });
 
@@ -44,14 +69,16 @@ sendBtn.addEventListener("click", (e) => {
   out.connect(context.destination); // connect vol to context destination
   volumeListener(); //set initial volume
 
-  sendUntil = send();
+  stopTime = send();
   enable(sendBtn, false);
   enable(frequencyElt, false);
   enable(durationElt, false);
   enable(pauseBtn, true);
   enable(stopBtn, true);
   setPaused(false);
-  checker = setInterval(checkTime, 100);
+
+  anim();
+  // checker = setInterval(checkTime, 100);
 });
 
 const pauseBtn = document.getElementById("pause");
@@ -79,8 +106,10 @@ function send() {
   let msg = messageElt.value.toUpperCase();
   // console.log(`msg=${msg}`);
 
-  let startTime = context.currentTime;
+  startTime = context.currentTime;
   let pos = 0;
+  let startPos = [];
+  let stopPos = [];
 
   for (var char of msg) {
     let code = mvs.indexOf(char);
@@ -90,17 +119,30 @@ function send() {
     while (code > 1) {
       let dur = code & 1 ? dah : dit;
       // console.log(`pos=${pos}, duration=${dur}`);
-      let osc = context.createOscillator(); // instantiate an oscillator
-      osc.frequency.value = frequency;
-      osc.connect(out); // connect it to the destination
-      osc.start(posToTime(pos)); // start it three seconds from now
-      pos += dur;
-      osc.stop(posToTime(pos));
-      pos += space;
+      startPos.push(pos);
+      stopPos.push(pos+dur);
+      pos += dur + space;
       code >>= 1; //shift right one bid
     }
     pos += extraperchar;
   }
+  startPos.push(pos); //startPos is longer than stopPos by 1
+  tapeLength = pos * diam;
+
+  for (var i=0 ; i<stopPos.length ; i++) {
+    let osc = context.createOscillator(); // instantiate an oscillator
+    osc.frequency.value = frequency;
+    osc.connect(out); // connect it to the destination
+    osc.start(posToTime(startPos[i]));
+    osc.stop(posToTime(stopPos[i]));
+  }
+
+  codePath = new Path2D();
+  for (var i=0 ; i<stopPos.length ; i++) {
+    codePath.moveTo( xstart + startPos[i]*diam , ystart);
+    codePath.lineTo( xstart + (stopPos[i]-1)*diam , ystart);
+  }
+
   return posToTime(pos);
 
   function posToTime(p) {
@@ -109,9 +151,9 @@ function send() {
 }
 
 function stopSend() {
-  clearInterval(checker);
+  // clearInterval(checker); 
   context.close().then(() => {
-    sendUntil = null;
+    stopTime = null;
     setPaused(false);
     enableSend(); //enable if message non-empty
     enable(frequencyElt, true);
@@ -121,8 +163,25 @@ function stopSend() {
   });
 }
 
-function checkTime() {
-  if (context.currentTime >= sendUntil) stopSend();
+// function checkTime() {
+//   if (context.currentTime >= stopTime) stopSend();
+// }
+
+function anim() {
+  const now = context.currentTime;
+  if (now >= stopTime) {
+    stopSend();
+    return;
+  }
+  requestAnimationFrame(anim);
+  const proportion = (now-startTime) / (stopTime-startTime);
+  // console.log(proportion);
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(canvas.width - proportion * tapeLength, 0);
+  ctx.stroke(codePath);
+  ctx.restore();
 }
 
 function frequencyListener() {
