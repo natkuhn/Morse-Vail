@@ -167,14 +167,17 @@ class Segment {
 }
 
 function stopSend() {
-  context.close().then(() => {
-    sending = false;
-    out = null;
-    setPaused(false);
-    enableSend(); //enable if message non-empty
-    enable(pauseBtn, false);
-    enable(stopBtn, false);
-  });
+  if (context.state === "closed") cleanUp();
+  else context.close().then(cleanUp); //blows up if already closed
+}
+
+function cleanUp() {
+  sending = false;
+  out = null;
+  setPaused(false);
+  enableSend(); //enable if message non-empty
+  enable(pauseBtn, false);
+  enable(stopBtn, false);
 }
 
 function doPause() {

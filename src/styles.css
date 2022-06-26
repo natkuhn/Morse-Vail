@@ -1,8 +1,9 @@
 body {
   font-family: sans-serif;
+  margin: 30px;
 }
 
-canvas { 
+#ticker { 
   border: 1px solid black; 
 }
 
