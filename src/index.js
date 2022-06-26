@@ -19,7 +19,7 @@ import "./styles.css";
 // draw trails using alpha
 // make tape scrollable
 
-let frequency, volume, duration;
+let frequency, volume, tdit;
 
 const mvs =
   "~ ETINAMSDRGUKWOHBLZFCP_VX_Q[YJ]56@7___8_/>__^_94=___<__3___2_10" +
@@ -52,9 +52,9 @@ const volumeElt = document.getElementById("vIn");
 volumeElt.addEventListener("input", volumeListener);
 volumeListener();
 
-const durationElt = document.getElementById("dIn");
-durationElt.addEventListener("input", durationListener);
-durationListener();
+const tditElt = document.getElementById("dIn");
+tditElt.addEventListener("input", tditListener);
+tditListener();
 
 const messageElt = document.getElementById("msg");
 messageElt.addEventListener("input", () => {
@@ -73,7 +73,7 @@ sendBtn.addEventListener("click", () => {
   stopTime = send();
   enable(sendBtn, false);
   enable(frequencyElt, false);
-  enable(durationElt, false);
+  enable(tditElt, false);
   enable(pauseBtn, true);
   enable(stopBtn, true);
   setPaused(false);
@@ -115,7 +115,7 @@ function send() {
     if (char == "\n" || char == "\t") char = " "; //white space
     let code = mvs.indexOf(char);
     // console.log(`char=${char}, code=${code}`);
-    if (code === 1) segments[segPointer] += extraperword; //space
+    if (code === 1) segments[segPointer].dits += extraperword; //space
     if (code < 2) continue; //space, or not found
     while (code > 1) {
       adjustPos();
@@ -130,14 +130,10 @@ function send() {
   adjustPos();
   tapeLength = pos * diam;
 
-  startTime = context.currentTime;
+  let time = context.currentTime;
+  startTime = time;
   for (var seg of segments) {
-    if ( !seg.voiced ) continue;  // silent
-    let osc = context.createOscillator(); // instantiate an oscillator
-    osc.frequency.value = frequency;
-    osc.connect(out); // connect it to the destination
-    osc.start(posToTime(seg.startPosition));
-    osc.stop(posToTime(seg.startPosition+seg.dits));
+    time = seg.queue(time);
   }
 
   codePath = new Path2D();
@@ -147,11 +143,11 @@ function send() {
     codePath.lineTo( xstart + (seg.startPosition+seg.dits-1) * diam , ystart);
   }
 
-  return posToTime(pos);
+  return time;
 
-  function posToTime(p) {
-    return startTime + p * duration/1000;
-  }
+  // function posToTime(p) {
+  //   return startTime + p * tdit/1000;
+  // }
 
   function adjustPos() {
     pos += segments[segPointer].dits;
@@ -165,6 +161,20 @@ class Segment {
     this.voiced = v;
     this.played = 0;
     this.tdit= null;
+    this.queued = false;
+  }
+
+  queue(time) {
+    this.startTime = time;
+    this.stopTime = time + this.dits * tdit / 1000;
+    this.queued = true;
+    if ( !this.voiced ) return this.stopTime;
+    let osc = context.createOscillator(); // instantiate an oscillator
+    osc.frequency.value = frequency;
+    osc.connect(out); // connect it to the destination
+    osc.start(this.startTime);
+    osc.stop(this.stopTime);
+    return this.stopTime;
   }
 }
 
@@ -175,7 +185,7 @@ function stopSend() {
     setPaused(false);
     enableSend(); //enable if message non-empty
     enable(frequencyElt, true);
-    enable(durationElt, true);
+    enable(tditElt, true);
     enable(pauseBtn, false);
     enable(stopBtn, false);
   });
@@ -215,9 +225,9 @@ function volumeListener() {
   // from 0 to 1, 1 full volume, 0 is muted
 }
 
-function durationListener() {
-  duration = durationElt.value;
-  document.getElementById("dOut").innerHTML = duration + " ms";
+function tditListener() {
+  tdit = tditElt.value;
+  document.getElementById("dOut").innerHTML = tdit + " ms";
 }
 
 function enable(elt, val) {
