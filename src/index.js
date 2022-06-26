@@ -17,6 +17,7 @@ import "./styles.css";
 // queue sounds on the fly so that controls work during playback
 // draw boundaries around the tape
 // draw trails using alpha
+// make tape scrollable
 
 let frequency, volume, duration;
 
@@ -42,12 +43,6 @@ const ystart = 25;
 let codePath;
 let tapeLength;
 
-// ctx.beginPath();
-// ctx.moveTo( r*2 , 25);
-// ctx.lineTo(r*2, 25);
-// ctx.moveTo( r*10 , 25);
-// ctx.lineTo(r*20, 25);
-// ctx.stroke();
 
 const frequencyElt = document.getElementById("fIn");
 frequencyElt.addEventListener("input", frequencyListener);
@@ -106,53 +101,70 @@ function send() {
   let dit = 1;
   let dah = dit * 3;
   let space = dit;
-  let extraperchar = dit * 2;
+  let interCharacter = 3;
   let extraperword = dit * 4;
 
   let msg = messageElt.value.toUpperCase();
   // console.log(`msg=${msg}`);
 
-  startTime = context.currentTime;
   let pos = 0;
-  let startPos = [];
-  let stopPos = [];
+  let segments = [new Segment(0,0,false)];
+  let segPointer = 0; //always start the loop pointing to a silent segment
 
   for (var char of msg) {
+    if (char == "\n" || char == "\t") char = " "; //white space
     let code = mvs.indexOf(char);
     // console.log(`char=${char}, code=${code}`);
-    if (code === 1) pos += extraperword; //space
+    if (code === 1) segments[segPointer] += extraperword; //space
     if (code < 2) continue; //space, or not found
     while (code > 1) {
-      let dur = code & 1 ? dah : dit;
-      // console.log(`pos=${pos}, duration=${dur}`);
-      startPos.push(pos);
-      stopPos.push(pos+dur);
-      pos += dur + space;
+      adjustPos();
+      segments[++segPointer] = new Segment(pos, code & 1 ? dah : dit, true);
+      adjustPos();
+      segments[++segPointer] = new Segment(pos, space, false);  //could get 
+      // elongated later
       code >>= 1; //shift right one bid
     }
-    pos += extraperchar;
+    segments[segPointer].dits = interCharacter;
   }
-  startPos.push(pos); //startPos is longer than stopPos by 1
+  adjustPos();
   tapeLength = pos * diam;
 
-  for (var i=0 ; i<stopPos.length ; i++) {
+  startTime = context.currentTime;
+  for (var seg of segments) {
+    if ( !seg.voiced ) continue;  // silent
     let osc = context.createOscillator(); // instantiate an oscillator
     osc.frequency.value = frequency;
     osc.connect(out); // connect it to the destination
-    osc.start(posToTime(startPos[i]));
-    osc.stop(posToTime(stopPos[i]));
+    osc.start(posToTime(seg.startPosition));
+    osc.stop(posToTime(seg.startPosition+seg.dits));
   }
 
   codePath = new Path2D();
-  for (i=0 ; i<stopPos.length ; i++) {
-    codePath.moveTo( xstart + startPos[i]*diam , ystart);
-    codePath.lineTo( xstart + (stopPos[i]-1)*diam , ystart);
+  for (seg of segments) {
+    if ( !seg.voiced ) continue;  // silent
+    codePath.moveTo( xstart + seg.startPosition * diam , ystart);
+    codePath.lineTo( xstart + (seg.startPosition+seg.dits-1) * diam , ystart);
   }
 
   return posToTime(pos);
 
   function posToTime(p) {
     return startTime + p * duration/1000;
+  }
+
+  function adjustPos() {
+    pos += segments[segPointer].dits;
+  }
+}
+
+class Segment {
+  constructor(p,d,v) {
+    this.startPosition = p;
+    this.dits = d;
+    this.voiced = v;
+    this.played = 0;
+    this.tdit= null;
   }
 }
 
