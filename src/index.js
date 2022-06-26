@@ -13,9 +13,9 @@ import "./styles.css";
 //https://stackoverflow.com/questions/67069266/parcel-build-error-plugin-is-not-a-function
 
 //TODO:
-// need to redo pause/resume!
-// make UI pretty
 // DONE queue sounds on the fly so that controls work during playback
+// DONE need to redo pause/resume!
+// make UI pretty
 // draw boundaries around the tape
 // draw trails using alpha
 // make tape scrollable
@@ -23,7 +23,7 @@ import "./styles.css";
 let frequency, volume, tdit;
 
 //queue up next sound when it's within this amount
-const trigger = .1  //100 ms
+const trigger = .05  //50 ms
 
 const mvs =
   "~ ETINAMSDRGUKWOHBLZFCP_VX_Q[YJ]56@7___8_/>__^_94=___<__3___2_10" +
@@ -73,36 +73,23 @@ messageElt.addEventListener("input", () => {
 
 const sendBtn = document.getElementById("send");
 sendBtn.addEventListener("click", () => {
-  context = new AudioContext();
-  out = context.createGain();
-  out.connect(context.destination); // connect vol to context destination
-  volumeListener(); //set initial volume
 
   send(messageElt.value.toUpperCase());
 
+  sending = true;
   enable(sendBtn, false);
-  // enable(frequencyElt, false);
-  // enable(tditElt, false);
   enable(pauseBtn, true);
   enable(stopBtn, true);
   setPaused(false);
 
+  createContext();
   front = 0;  // start at the beginning
   anim();
 
 });
 
 const pauseBtn = document.getElementById("pause");
-pauseBtn.addEventListener("click", () => {
-  // console.log("pause/resume", paused);
-  if (paused) {
-    setPaused(false);
-    context.resume();
-  } else {
-    setPaused(true);
-    context.suspend();
-  }
-});
+pauseBtn.addEventListener("click", doPause);
 
 const stopBtn = document.getElementById("stop");
 stopBtn.addEventListener("click", stopSend);
@@ -114,7 +101,6 @@ function send(msg) {
   let interCharacter = 3;
   let extraperword = dit * 4;
 
-  
   // console.log(`msg=${msg}`);
 
   let pos = 0;
@@ -138,13 +124,6 @@ function send(msg) {
     segments[segPointer].dits = interCharacter;
   }
   adjustPos();
-  // totalDits = pos;
-
-  // let time = context.currentTime;
-  // startTime = time;
-  // for (var seg of segments) {
-  //   time = seg.queue(time);
-  // }
 
   codePath = new Path2D();
   for (var seg of segments) {
@@ -154,10 +133,6 @@ function send(msg) {
   }
 
   return;
-
-  // function posToTime(p) {
-  //   return startTime + p * tdit/1000;
-  // }
 
   function adjustPos() {
     pos += segments[segPointer].dits;
@@ -169,15 +144,17 @@ class Segment {
     this.startPosition = p;
     this.dits = d;
     this.voiced = v;
-    this.played = 0;
+    this.played = 0;  // how many dits played since start (or resume)
+    this.playedBeforePause = 0;
     this.tdit= null;
     this.queued = false;
   }
 
   queue(time) {
-    console.log(`queueing startTime=${time}`)
+    // console.log(`queueing startTime=${time}`)
     this.startTime = time;
-    this.stopTime = time + this.dits * tdit / 1000;
+    this.tditSec = tdit / 1000;
+    this.stopTime = time + (this.dits-this.playedBeforePause) * this.tditSec;
     this.queued = true;
     if ( !this.voiced ) return this.stopTime;
     let osc = context.createOscillator(); // instantiate an oscillator
@@ -190,19 +167,42 @@ class Segment {
 }
 
 function stopSend() {
-  // clearInterval(checker); 
   context.close().then(() => {
     sending = false;
+    out = null;
     setPaused(false);
     enableSend(); //enable if message non-empty
-    // enable(frequencyElt, true);
-    // enable(tditElt, true);
     enable(pauseBtn, false);
     enable(stopBtn, false);
   });
 }
 
+function doPause() {
+  // console.log("pause/resume", paused);
+  if (paused) {
+    createContext();
+    setPaused(false);
+    anim();
+  } else {
+    context.close().then(() => {
+      out = null;
+      setPaused(true);
+    });
+    const now = context.currentTime;
+    let seg = segments[front];
+    if ( now < seg.stopTime ) seg.playedBeforePause += seg.played;
+    else front++; //should almost never actually happen
+    for (var i=front ; i<segments.length ; i++)
+      segments[i].queued = false;
+  }
+}
 
+function createContext() {
+  context = new AudioContext();
+  out = context.createGain();
+  out.connect(context.destination); // connect vol to context destination
+  volumeListener(); //set initial volume
+}
 
 function anim() {
   if ( paused ) return;
@@ -227,10 +227,9 @@ function anim() {
       }
     }
     // now we need to position the tape
-    const proportion = 
-      (now-frontSeg.startTime) / (frontSeg.stopTime-frontSeg.startTime);
-    frontSeg.played = frontSeg.dits * proportion;
-    let tapePosition = (frontSeg.startPosition+frontSeg.played) * diam;
+    frontSeg.played = (now - frontSeg.startTime) / frontSeg.tditSec;
+    let tapePosition = diam * 
+      (frontSeg.startPosition+frontSeg.playedBeforePause+frontSeg.played);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
