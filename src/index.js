@@ -62,14 +62,14 @@ durationElt.addEventListener("input", durationListener);
 durationListener();
 
 const messageElt = document.getElementById("msg");
-messageElt.addEventListener("input", (e) => {
+messageElt.addEventListener("input", () => {
   // deal with Send button
   if (stopTime) return; //should stay disabled while sending
   enableSend();
 });
 
 const sendBtn = document.getElementById("send");
-sendBtn.addEventListener("click", (e) => {
+sendBtn.addEventListener("click", () => {
   context = new AudioContext();
   out = context.createGain();
   out.connect(context.destination); // connect vol to context destination
@@ -88,7 +88,7 @@ sendBtn.addEventListener("click", (e) => {
 });
 
 const pauseBtn = document.getElementById("pause");
-pauseBtn.addEventListener("click", (e) => {
+pauseBtn.addEventListener("click", () => {
   // console.log("pause/resume", paused);
   if (paused) {
     setPaused(false);
@@ -144,7 +144,7 @@ function send() {
   }
 
   codePath = new Path2D();
-  for (var i=0 ; i<stopPos.length ; i++) {
+  for (i=0 ; i<stopPos.length ; i++) {
     codePath.moveTo( xstart + startPos[i]*diam , ystart);
     codePath.lineTo( xstart + (stopPos[i]-1)*diam , ystart);
   }
