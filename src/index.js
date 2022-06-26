@@ -13,13 +13,17 @@ import "./styles.css";
 //https://stackoverflow.com/questions/67069266/parcel-build-error-plugin-is-not-a-function
 
 //TODO:
+// need to redo pause/resume!
 // make UI pretty
-// queue sounds on the fly so that controls work during playback
+// DONE queue sounds on the fly so that controls work during playback
 // draw boundaries around the tape
 // draw trails using alpha
 // make tape scrollable
 
 let frequency, volume, tdit;
+
+//queue up next sound when it's within this amount
+const trigger = .1  //100 ms
 
 const mvs =
   "~ ETINAMSDRGUKWOHBLZFCP_VX_Q[YJ]56@7___8_/>__^_94=___<__3___2_10" +
@@ -27,10 +31,14 @@ const mvs =
 
 let context = null,
   out = null;
-let startTime;
-let stopTime; //non-null only when sending
+// let startTime;
+// let stopTime; //non-null only when sending
 // let checker;
 let paused = false;
+let sending = false;
+
+let segments = [];
+let front; //points to the front Segment
 
 const canvas = document.getElementById("ticker");
 const ctx = canvas.getContext("2d");
@@ -41,7 +49,7 @@ ctx.lineCap = "round";
 const xstart = diam / 2;
 const ystart = 25;
 let codePath;
-let tapeLength;
+// let totalDits;
 
 
 const frequencyElt = document.getElementById("fIn");
@@ -59,8 +67,8 @@ tditListener();
 const messageElt = document.getElementById("msg");
 messageElt.addEventListener("input", () => {
   // deal with Send button
-  if (stopTime) return; //should stay disabled while sending
-  enableSend();
+  if ( sending ) return; //should stay disabled while sending
+  enableSend(); // will disable, if field is empty.
 });
 
 const sendBtn = document.getElementById("send");
@@ -70,16 +78,18 @@ sendBtn.addEventListener("click", () => {
   out.connect(context.destination); // connect vol to context destination
   volumeListener(); //set initial volume
 
-  stopTime = send();
+  send(messageElt.value.toUpperCase());
+
   enable(sendBtn, false);
-  enable(frequencyElt, false);
-  enable(tditElt, false);
+  // enable(frequencyElt, false);
+  // enable(tditElt, false);
   enable(pauseBtn, true);
   enable(stopBtn, true);
   setPaused(false);
 
+  front = 0;  // start at the beginning
   anim();
-  // checker = setInterval(checkTime, 100);
+
 });
 
 const pauseBtn = document.getElementById("pause");
@@ -97,18 +107,18 @@ pauseBtn.addEventListener("click", () => {
 const stopBtn = document.getElementById("stop");
 stopBtn.addEventListener("click", stopSend);
 
-function send() {
+function send(msg) {
   let dit = 1;
   let dah = dit * 3;
   let space = dit;
   let interCharacter = 3;
   let extraperword = dit * 4;
 
-  let msg = messageElt.value.toUpperCase();
+  
   // console.log(`msg=${msg}`);
 
   let pos = 0;
-  let segments = [new Segment(0,0,false)];
+  segments = [new Segment(0,0,false)];
   let segPointer = 0; //always start the loop pointing to a silent segment
 
   for (var char of msg) {
@@ -128,22 +138,22 @@ function send() {
     segments[segPointer].dits = interCharacter;
   }
   adjustPos();
-  tapeLength = pos * diam;
+  // totalDits = pos;
 
-  let time = context.currentTime;
-  startTime = time;
-  for (var seg of segments) {
-    time = seg.queue(time);
-  }
+  // let time = context.currentTime;
+  // startTime = time;
+  // for (var seg of segments) {
+  //   time = seg.queue(time);
+  // }
 
   codePath = new Path2D();
-  for (seg of segments) {
+  for (var seg of segments) {
     if ( !seg.voiced ) continue;  // silent
     codePath.moveTo( xstart + seg.startPosition * diam , ystart);
     codePath.lineTo( xstart + (seg.startPosition+seg.dits-1) * diam , ystart);
   }
 
-  return time;
+  return;
 
   // function posToTime(p) {
   //   return startTime + p * tdit/1000;
@@ -165,6 +175,7 @@ class Segment {
   }
 
   queue(time) {
+    console.log(`queueing startTime=${time}`)
     this.startTime = time;
     this.stopTime = time + this.dits * tdit / 1000;
     this.queued = true;
@@ -181,35 +192,58 @@ class Segment {
 function stopSend() {
   // clearInterval(checker); 
   context.close().then(() => {
-    stopTime = null;
+    sending = false;
     setPaused(false);
     enableSend(); //enable if message non-empty
-    enable(frequencyElt, true);
-    enable(tditElt, true);
+    // enable(frequencyElt, true);
+    // enable(tditElt, true);
     enable(pauseBtn, false);
     enable(stopBtn, false);
   });
 }
 
-// function checkTime() {
-//   if (context.currentTime >= stopTime) stopSend();
-// }
+
 
 function anim() {
+  if ( paused ) return;
   const now = context.currentTime;
-  if (now >= stopTime) {
-    stopSend();
+  // console.log(`now=${now}`);
+  while ( front < segments.length ) {
+    let frontSeg = segments[front];
+    if ( !frontSeg.queued ) frontSeg.queue(now);
+    if ( frontSeg.stopTime <= now ) {
+      front++;
+      continue;
+    }
+    if ( frontSeg.stopTime-now < trigger ) {
+      let time = frontSeg.stopTime;
+      for ( var i=front+1 ; i<segments.length ; i++ ) {
+        if ( segments[i].queued ) {
+          time = segments[i].stopTime;
+          continue;
+        }
+        if ( time-now > trigger ) break;
+        time = segments[i].queue(time);
+      }
+    }
+    // now we need to position the tape
+    const proportion = 
+      (now-frontSeg.startTime) / (frontSeg.stopTime-frontSeg.startTime);
+    frontSeg.played = frontSeg.dits * proportion;
+    let tapePosition = (frontSeg.startPosition+frontSeg.played) * diam;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(canvas.width - tapePosition, 0);
+    ctx.stroke(codePath);
+    ctx.restore();
+    // console.log('requesting');
+    requestAnimationFrame(anim);
     return;
   }
-  requestAnimationFrame(anim);
-  const proportion = (now-startTime) / (stopTime-startTime);
-  // console.log(proportion);
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.save();
-  ctx.translate(canvas.width - proportion * tapeLength, 0);
-  ctx.stroke(codePath);
-  ctx.restore();
+  
+  //if we get here, it's the end of the line
+  stopSend();
 }
 
 function frequencyListener() {
